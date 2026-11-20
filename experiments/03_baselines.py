@@ -12,6 +12,8 @@ SGN = {
     "sgn": dict(objective="es_rb", K=8, noise="input"),  # noise appended to the input
     "sgn_temp": dict(objective="es_rb", K=8, noise="input", refit="temp"),  # + held-out noise rescaling
     "sgn_node": dict(objective="es_rb", K=8, noise="all"),  # noise at every hidden node
+    "sgn_k2": dict(objective="es_rb", K=2, noise="input"),  # the minimum: two paths per example
+    "sgn_pit": dict(objective="es_rb", K=8, noise="input", refit="pit"),  # + post-hoc PIT recalibration
 }
 TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp"]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]

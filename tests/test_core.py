@@ -94,3 +94,13 @@ def test_coverage_and_calibration_of_a_perfect_forecaster():
     assert abs(out["cov90"] - 0.9) < 0.02 and out["cal_err"] < 0.02
     truth = rng.standard_normal((4000, 500))
     assert metrics.against_truth(S, truth)["w1"] < 0.12
+
+
+def test_pit_recalibration_repairs_an_overconfident_forecaster():
+    from gpnn.methods import pit_recalibrate
+
+    rng = np.random.default_rng(3)
+    y_val, y = 1.4 * rng.standard_normal(3000), 1.4 * rng.standard_normal(3000)  # truth is N(0, 1.4^2)
+    S_val, S = rng.standard_normal((3000, 500)), rng.standard_normal((3000, 500))  # forecasts say N(0, 1)
+    assert metrics.summarize(S, y)["cov90"] < 0.8
+    assert abs(metrics.summarize(pit_recalibrate(S, S_val, y_val), y)["cov90"] - 0.9) < 0.03

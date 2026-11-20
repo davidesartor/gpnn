@@ -15,7 +15,7 @@ import numpy as np
 
 from gpnn import runner
 
-TAGS = ["sgn_es", "sgn_iw", "mv_gauss", "mdn", "quantile_indep", "quantile_comono"]
+TAGS = ["sgn", "sgn_node", "sgn_iw", "mv_gauss", "mdn", "quantile_indep", "quantile_comono"]
 OUT = runner.RESULTS / "05_multi.jsonl"
 
 
@@ -28,7 +28,7 @@ def one(job):
     tag, name, seed, _ = job
     d = multi.Split(name, seed=seed)
     t = time.time()
-    r = multi.METHODS[tag](d, jax.random.key(seed))
+    r = multi.METHODS[tag](d, jax.random.key(seed), act="relu")
     row = dict(method=tag, dataset=name, seed=seed, n=len(d.xtr), time=time.time() - t)
     row.update(multi.evaluate(r["S"], d))
     if seed == 0:

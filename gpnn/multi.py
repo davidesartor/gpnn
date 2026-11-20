@@ -162,8 +162,9 @@ def make_quantile(coupling="indep", Q=50):
 
 
 METHODS = {
-    "sgn_es": make_sgn("es", K=8),
-    "sgn_iw": make_sgn("iw", K=32),
+    "sgn": make_sgn("es", K=8, noise="input"),
+    "sgn_node": make_sgn("es", K=8, noise="all"),
+    "sgn_iw": make_sgn("iw", K=32, noise="input"),
     "mv_gauss": mv_gauss,
     "mdn": make_mdn(10),
     "quantile_indep": make_quantile("indep"),
@@ -204,7 +205,11 @@ def _well(rng, x, m, H=12, dt=0.25, sub=5):
     return np.stack(out, -1)
 
 
-TOYS = {"ring": (_ring_x, _ring), "well": (_well_x, _well)}
+TOYS = {
+    "ring": (_ring_x, _ring),
+    "well": (_well_x, _well),
+    "well48": (_well_x, lambda rng, x, m: _well(rng, x, m, H=48)),
+}
 
 
 class Split:

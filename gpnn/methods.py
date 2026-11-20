@@ -57,9 +57,22 @@ def refit_noise(cfg, params, key, xv, yv, objective, mode="temp", steps=600, K=1
     return _with_noise(params, expand(q))
 
 
+def pit_recalibrate(S, S_val, y_val):
+    """Push predictive samples through the held-out PIT distribution.
+
+    If G is the CDF of the validation PITs F(y), then G o F is calibrated on the
+    validation split by construction; its quantile function is Q(G^-1(u)).
+    It can only re-weight the range the samples already span, so it cannot
+    repair a forecaster whose samples never reach the observed values.
+    """
+    pit = (np.asarray(S_val) < np.asarray(y_val)[:, None]).mean(1)
+    u = (np.arange(S.shape[1]) + 0.5) / S.shape[1]
+    return np.quantile(S, np.quantile(pit, u), axis=1).T
+
+
 def make_sgn(objective="es_rb", K=8, K_val=32, refit=None, n_ens=1, **cfg_kw):
-    """refit: None | "temp" | "scales" (see refit_noise). n_ens > 1 pools the
-    samples of independently trained networks."""
+    """refit: None | "temp" | "scales" (see refit_noise) | "pit" (see pit_recalibrate).
+    n_ens > 1 pools the samples of independently trained networks."""
 
     def one(d, key, hp):
         cfg = sgn.SGN(width=hp["width"], depth=hp["depth"], act=hp["act"], **cfg_kw)
@@ -76,7 +89,7 @@ def make_sgn(objective="es_rb", K=8, K_val=32, refit=None, n_ens=1, **cfg_kw):
             val_loss_fn=sgn.make_loss(cfg, objective, max(K, K_val)),
             **_train_kw(hp),
         )
-        if refit:
+        if refit in ("temp", "scales"):
             params = refit_noise(cfg, params, k4, d.xva, d.yva, objective, refit)
         info = dict(train_s=time.time() - t, sy=float(jnp.exp(params["log_sy"])), hist=hist)
         if not cfg.cond:
@@ -84,7 +97,11 @@ def make_sgn(objective="es_rb", K=8, K_val=32, refit=None, n_ens=1, **cfg_kw):
         S = sgn.sample(cfg, params, k2, jnp.asarray(d.xte), M // n_ens)
         logp, ess = sgn.log_prob(cfg, params, k3, jnp.asarray(d.xte), jnp.asarray(d.yte), 2000, return_ess=True)
         info["ess"] = float(jnp.median(ess))
-        return dict(S=np.asarray(S), logp=np.asarray(logp), info=info, params=params, cfg=cfg)
+        S, logp = np.asarray(S), np.asarray(logp)
+        if refit == "pit":
+            S_val = sgn.sample(cfg, params, k4, jnp.asarray(d.xva), M)
+            S, logp = pit_recalibrate(S, S_val, d.yva), None  # the density is no longer the model's
+        return dict(S=S, logp=logp, info=info, params=params, cfg=cfg)
 
     def method(d, key, **hp):
         hp = _hp(hp)

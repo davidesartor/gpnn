@@ -33,11 +33,11 @@ def one(job):
     t = time.time()
     if part == "A":
         d = data.toy(name, seed=seed)
-        r = methods.make_sgn("es_rb", K=8)(d, jax.random.key(seed), depth=a, width=b)
+        r = methods.make_sgn("es_rb", K=8, noise="input")(d, jax.random.key(seed), depth=a, width=b, act="relu")
         row = dict(depth=a, width=b, dim=1)
     else:
         d = multi.Split("well", seed=seed, dims=a)
-        r = multi.make_sgn("es", K=8)(d, jax.random.key(seed))
+        r = multi.make_sgn("es", K=8, noise="input")(d, jax.random.key(seed), act="relu")
         row = dict(depth=2, width=64, dim=a)
     row.update(part=part, dataset=name, seed=seed, ess=r["info"]["ess"], sy=r["info"]["sy"], time=time.time() - t)
     return row

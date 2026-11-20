@@ -33,7 +33,7 @@ def one(job):
 
     build = importlib.import_module("experiments.03_baselines").build
     d = data.toy(toy, x_test=grid(toy), m_truth=MS)
-    r = build(method)(d, jax.random.key(0))
+    r = build(method)(d, jax.random.key(0), act="relu")
     return toy, method, r["S"][:, :MS] * d.ys + d.ym, d.truth * d.ys + d.ym
 
 

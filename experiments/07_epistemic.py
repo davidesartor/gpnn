@@ -31,10 +31,11 @@ A_TAGS = ["sgn", "sgn_temp", "sgn_ens5", "mdn", "gauss_hetero", "ensemble", "gp"
 B_TAGS = ["sgn", "sgn_temp", "sgn_ens5", "mdn", "quantile", "gauss_hetero", "ensemble", "gp"]
 SIZES = [100, 300, 1000, 3000]
 SGN = {
-    "sgn": dict(objective="es_rb", K=8),
-    "sgn_temp": dict(objective="es_rb", K=8, refit="temp"),
-    "sgn_ens5": dict(objective="es_rb", K=8, n_ens=5),
+    "sgn": dict(objective="es_rb", K=8, noise="input"),
+    "sgn_temp": dict(objective="es_rb", K=8, noise="input", refit="temp"),
+    "sgn_ens5": dict(objective="es_rb", K=8, noise="input", n_ens=5),
 }
+HP = dict(act="relu")
 
 
 def build(tag):
@@ -49,7 +50,7 @@ def gap_one(job):
     from gpnn import data
 
     d = data.toy("hetero_gap", seed=seed, x_test=GRID, m_truth=4000)
-    S = build(tag)(d, jax.random.key(seed))["S"]
+    S = build(tag)(d, jax.random.key(seed), **HP)["S"]
     lo, hi = np.quantile(S, 0.05, axis=1), np.quantile(S, 0.95, axis=1)
     cc = ((d.truth >= lo[:, None]) & (d.truth <= hi[:, None])).mean(1)  # true coverage at each x
     to_raw = lambda a: a * d.ys + d.ym
@@ -67,7 +68,7 @@ if __name__ == "__main__":
         np.savez_compressed(OUT_A, **out)
     if "size" in sys.argv:
         for n in SIZES:
-            runner.run(f"07_size_n{n}", build, B_TAGS, [("toy", "friedman", dict(n=n)), ("toy", "hetero", dict(n=n))], seeds=range(5))
+            runner.run(f"07_size_n{n}", build, B_TAGS, [("toy", "friedman", dict(n=n)), ("toy", "hetero", dict(n=n))], seeds=range(5), hp=HP)
 
     if OUT_A.exists():
         z = np.load(OUT_A)
