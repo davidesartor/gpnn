@@ -23,6 +23,9 @@ STRUCT = {
     "all+cond+het": dict(noise="all", cond=True, het=True),
     "none+het": dict(noise="none", het=True),  # heteroscedastic Gaussian, CRPS-trained
     "both": dict(noise="both"),
+    "input1": dict(noise="input", input_noise=1),
+    "input2": dict(noise="input", input_noise=2),
+    "input32": dict(noise="input", input_noise=32),
 }
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]
 
@@ -32,6 +35,7 @@ TAGS = list(STRUCT) + ["sgn_analytic"]
 # activations let the network stretch Gaussian noise into heavy tails.
 TAGS += [f"{s}@{a}" for a in ("relu", "silu") for s in ("all", "first", "input")]
 # Is it the depth of processing after the noise that matters? (tag#depth)
+TAGS += ["input1@relu", "input2@relu", "input32@relu"]  # how many noise dimensions?
 TAGS += ["both", "both@silu", "all#3", "input#3", "both#3", "all@silu#3", "input@silu#3"]
 
 

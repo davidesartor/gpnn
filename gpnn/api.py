@@ -115,6 +115,19 @@ class ProbNet:
         lo, hi = self.quantile(x, [a, 1 - a], n, fn, seed).T
         return lo, hi
 
+    def regions(self, x, level=0.9, n=2000, fn=None, seed=0):
+        """Highest-density regions: for each row, a list of (lo, hi) intervals that
+        together hold `level` of the predictive mass. More than one interval means
+        the prediction is multimodal."""
+        from .metrics import hdr
+
+        edges, mask = hdr(self._scalar_samples(x, n, fn, seed), level)
+        out = []
+        for e, m in zip(edges, mask):
+            step = np.diff(np.concatenate([[0], m.astype(int), [0]]))
+            out.append([(float(e[a]), float(e[b])) for a, b in zip(np.where(step == 1)[0], np.where(step == -1)[0])])
+        return out
+
     def mean(self, x, n=1000, seed=0):
         return self.sample(x, n, seed).mean(1)
 

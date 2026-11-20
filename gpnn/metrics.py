@@ -68,3 +68,42 @@ def against_truth(S, T):
         cc = ((T >= lo[:, None]) & (T <= hi[:, None])).mean(1)
         out[f"ccov_err{int(lv * 100)}"] = float(np.abs(cc - lv).mean())
     return out
+
+
+def hdr(S, level=0.9, bins=120, smooth=1.5):
+    """Highest-density region per row: the smallest set holding `level` of the samples.
+
+    For a multimodal prediction this is a union of intervals, where the central
+    interval would have to span the empty space between the modes.
+    Returns (edges (N, bins+1), mask (N, bins)): mask marks the bins in the region.
+    """
+    S = np.asarray(S, np.float64)
+    lo, hi = S.min(1), S.max(1)
+    pad = 0.02 * (hi - lo) + 1e-9
+    edges = np.linspace(lo - pad, hi + pad, bins + 1, axis=1)
+    idx = np.clip(((S - edges[:, :1]) / (edges[:, -1:] - edges[:, :1]) * bins).astype(int), 0, bins - 1)
+    hist = np.zeros((len(S), bins))
+    np.add.at(hist, (np.arange(len(S))[:, None], idx), 1.0)
+    k = np.exp(-0.5 * (np.arange(-4, 5) / smooth) ** 2)
+    hist = np.apply_along_axis(lambda h: np.convolve(h, k / k.sum(), mode="same"), 1, hist)
+    order = np.argsort(-hist, 1)
+    cum = np.cumsum(np.take_along_axis(hist, order, 1), 1) / hist.sum(1, keepdims=True)
+    keep_sorted = np.concatenate([np.ones((len(S), 1), bool), cum[:, :-1] < level], 1)
+    mask = np.zeros_like(keep_sorted)
+    np.put_along_axis(mask, order, keep_sorted, 1)
+    return edges, mask
+
+
+def hdr_contains(edges, mask, y):
+    """Is y (N,) or (N, m) inside the region? Same shape as y."""
+    y = np.asarray(y, np.float64)
+    y2 = y.reshape(len(edges), -1)
+    bins = mask.shape[1]
+    pos = (y2 - edges[:, :1]) / (edges[:, -1:] - edges[:, :1]) * bins
+    inside = (pos >= 0) & (pos < bins)
+    hit = np.take_along_axis(mask, np.clip(pos.astype(int), 0, bins - 1), 1) & inside
+    return hit.reshape(y.shape)
+
+
+def hdr_length(edges, mask):
+    return mask.sum(1) * (edges[:, 1] - edges[:, 0])

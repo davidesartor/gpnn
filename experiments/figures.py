@@ -10,7 +10,7 @@ import numpy as np
 
 from gpnn import runner
 
-BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
+BLUE, ORANGE, AQUA, YELLOW = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 plt.rcParams.update(
     {
@@ -136,8 +136,8 @@ def well():
 def size():
     """Exp 7B: coverage of the nominal 90% interval as the training set shrinks."""
     sizes = [100, 300, 1000, 3000]
-    series = [("sgn", "stochastic net", BLUE), ("sgn_temp", "stochastic net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA)]
-    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.3), sharey=True)
+    series = [("sgn", "stochastic net", BLUE), ("sgn_temp", "stochastic net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA), ("gp", "Gaussian process", YELLOW)]
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.6), sharey=True)
     for ax, ds in zip(axes, ("friedman", "hetero")):
         ax.axhline(0.9, color=MUTED, lw=1, ls=(0, (4, 3)))
         for tag, label, color in series:
@@ -147,12 +147,12 @@ def size():
         ax.set_xticks(sizes, [str(n) for n in sizes])
         ax.set_xlabel("training points")
         ax.set_title(TOY_TITLE[ds], loc="left")
-        ax.set_ylim(0.6, 1.0)
+        ax.set_ylim(0.4, 1.0)
     axes[0].set_ylabel("test coverage of 90% interval")
-    axes[0].annotate("nominal", (3000, 0.9), xytext=(0, 4), textcoords="offset points", ha="right", color=MUTED, fontsize=8)
+    axes[1].annotate("nominal 0.9", (100, 0.9), xytext=(0, 5), textcoords="offset points", ha="left", color=MUTED, fontsize=8)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
     fig.savefig("figures/size.png", dpi=170)
 
 

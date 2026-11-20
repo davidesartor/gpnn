@@ -104,3 +104,14 @@ def test_pit_recalibration_repairs_an_overconfident_forecaster():
     S_val, S = rng.standard_normal((3000, 500)), rng.standard_normal((3000, 500))  # forecasts say N(0, 1)
     assert metrics.summarize(S, y)["cov90"] < 0.8
     assert abs(metrics.summarize(pit_recalibrate(S, S_val, y_val), y)["cov90"] - 0.9) < 0.03
+
+
+def test_highest_density_region_is_shorter_than_the_central_interval_when_bimodal():
+    rng = np.random.default_rng(4)
+    sign = rng.choice([-1.0, 1.0], (300, 4000))
+    S = 2.0 * sign + 0.2 * rng.standard_normal((300, 4000))
+    y = 2.0 * rng.choice([-1.0, 1.0], 300) + 0.2 * rng.standard_normal(300)
+    edges, mask = metrics.hdr(S, 0.9)
+    lo, hi = metrics.interval(S, 0.9)
+    assert abs(metrics.hdr_contains(edges, mask, y).mean() - 0.9) < 0.06
+    assert metrics.hdr_length(edges, mask).mean() < 0.5 * (hi - lo).mean()
