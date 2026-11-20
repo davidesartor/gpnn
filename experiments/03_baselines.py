@@ -9,11 +9,13 @@ import sys
 from gpnn import methods, runner
 
 SGN = {
-    "sgn": dict(objective="es_rb", K=8),
-    "sgn_het": dict(objective="es_rb", K=8, het=True, collapse=True),
+    "sgn": dict(objective="es_rb", K=8, noise="input"),  # noise appended to the input
+    "sgn_temp": dict(objective="es_rb", K=8, noise="input", refit="temp"),  # + held-out noise rescaling
+    "sgn_node": dict(objective="es_rb", K=8, noise="all"),  # noise at every hidden node
 }
 TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp"]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]
+RUNS = [(n, act, seeds) for n in (2000, 200) for act, seeds in (("relu", 5), ("tanh", 3))]
 
 
 def build(tag):
@@ -22,9 +24,12 @@ def build(tag):
 
 if __name__ == "__main__":
     if "run" in sys.argv:
-        for n in (2000, 200):
-            runner.run(f"03_baselines_n{n}", build, TAGS, [("toy", t, dict(n=n)) for t in TOYS], seeds=range(5))
-    for n in (2000, 200):
-        rows = runner.load(f"03_baselines_n{n}")
-        print(f"\n================ n = {n}")
+        for n, act, seeds in RUNS:
+            tags = [t for t in TAGS if not (t == "gp" and act == "tanh")]  # the GP has no activation
+            runner.run(f"03_baselines_n{n}_{act}", build, tags, [("toy", t, dict(n=n)) for t in TOYS], seeds=range(seeds), hp=dict(act=act))
+    for n, act, _ in RUNS:
+        if not (runner.RESULTS / f"03_baselines_n{n}_{act}.jsonl").exists():
+            continue
+        rows = runner.load(f"03_baselines_n{n}_{act}")
+        print(f"\n================ n = {n}, {act}")
         print(runner.table(rows, ["crps", "w1", "ccov_err90", "cov90", "width90", "cal_err", "nll", "time"]))

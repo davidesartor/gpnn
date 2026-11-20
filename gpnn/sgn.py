@@ -33,7 +33,7 @@ class SGN(NamedTuple):
     width: int = 64
     depth: int = 2
     act: str = "tanh"
-    noise: str = "all"  # all | none | first | last | input
+    noise: str = "all"  # all | none | first | last | input | both (= input + all)
     cond: bool = False  # node noise scale depends on the parent layer
     input_noise: int = 8  # dims of noise appended to x when noise == "input"
     noise0: float = 0.5
@@ -47,6 +47,7 @@ class SGN(NamedTuple):
     def noisy(self, l):
         return {
             "all": True,
+            "both": True,
             "none": False,
             "input": False,
             "first": l == 0,
@@ -59,7 +60,7 @@ def _inv_softplus(v):
 
 
 def init(cfg: SGN, key, d_in):
-    d0 = d_in + (cfg.input_noise if cfg.noise == "input" else 0)
+    d0 = d_in + (cfg.input_noise if cfg.noise in ("input", "both") else 0)
     sizes = [d0] + [cfg.width] * cfg.depth
     keys = jax.random.split(key, cfg.depth + 1)
     layers = []
@@ -112,7 +113,7 @@ def forward(cfg: SGN, params, key, x):
     act = ACTS[cfg.act]
     keys = jax.random.split(key, cfg.depth + 1)
     h = x
-    if cfg.noise == "input":
+    if cfg.noise in ("input", "both"):
         h = jnp.concatenate([h, jax.random.normal(keys[-1], (x.shape[0], cfg.input_noise))], -1)
     n_sampled = cfg.depth - 1 if cfg.collapse else cfg.depth
     for l, layer in enumerate(params["layers"][:n_sampled]):
