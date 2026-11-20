@@ -48,3 +48,23 @@ def test_vector_targets_give_joint_samples_and_functional_intervals():
     assert corr > 0.8  # the dependence between outputs is learned, not just the marginals
     lo, hi = net.interval(x[:200], 0.9, fn=lambda v: v[..., 0] - v[..., 1])
     assert (hi - lo).mean() < 1.0  # the shared noise cancels in the difference
+
+
+def test_gp_hybrid_widens_away_from_the_data_and_keeps_the_noise_shape():
+    from gpnn.api import GPProbNet
+
+    rng = np.random.default_rng(3)
+    x = rng.uniform(-1, 1, (600, 1))
+    y = np.sin(3 * x[:, 0]) + 0.3 * (rng.exponential(1.0, 600) - 1)  # one-sided noise
+    net = GPProbNet(steps=1500).fit(x, y)
+    inside, outside = np.array([[0.0]]), np.array([[4.0]])
+    w_in = np.subtract(*net.interval(inside, 0.9)[::-1])[0]
+    w_out = np.subtract(*net.interval(outside, 0.9)[::-1])[0]
+    assert w_out > 2 * w_in  # no data at x = 4: the GP scale takes over
+    xt = rng.uniform(-1, 1, (2000, 1))
+    yt = np.sin(3 * xt[:, 0]) + 0.3 * (rng.exponential(1.0, 2000) - 1)
+    lo, hi = net.interval(xt, 0.9)
+    assert abs(((yt >= lo) & (yt <= hi)).mean() - 0.9) < 0.05
+    q = net.quantile(inside, [0.05, 0.5, 0.95])[0]
+    assert net.pick != "gauss" and (q[2] - q[1]) > 1.5 * (q[1] - q[0])  # skew is learned
+    assert np.isfinite(net.log_prob(xt[:50], yt[:50])).all()

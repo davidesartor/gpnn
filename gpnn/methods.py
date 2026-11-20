@@ -272,15 +272,34 @@ def gp(d, key, max_n=1000, **hp):
     return dict(S=mu[:, None] + sd[:, None] * eps, logp=logp, info=dict(train_s=time.time() - t))
 
 
+def gp_parts(model, x):
+    """GP predictive mean, function (epistemic) std and noise std at x."""
+    m, s = model.predict(np.asarray(x, np.float64), return_std=True)
+    s_n = float(np.sqrt(model.kernel_.k2.noise_level))
+    return m, np.sqrt(np.maximum(s**2 - s_n**2, 0.0)), s_n
+
+
+def gp_loo(model, y):
+    """Closed-form leave-one-out predictive mean and std at the GP's own training points."""
+    from scipy.linalg import cho_solve
+
+    d = np.diag(cho_solve((model.L_, True), np.eye(len(y))))
+    return y - model.alpha_ / d, np.sqrt(1 / d)
+
+
 def make_gp_sgn(max_n=1000, refit="temp2", select=True, **sgn_kw):
-    """GP for the function, sampling net for the shape of what the GP leaves over.
+    """GP for the function, sampling net for the shape of the noise.
 
-    A GP is fitted first. Every target is standardised by the GP's predictive
-    mean m(x) and standard deviation s(x), using leave-one-out predictions for
-    the points the GP was fitted on, and a sampling net learns the distribution
-    of z = (y - m(x)) / s(x). A prediction is y = m(x) + s(x) z.
+    The GP splits its predictive variance into a part for the function, s_f(x)^2,
+    which shrinks with data and grows away from it, and a constant noise part
+    s_n^2. Here the Gaussian noise is replaced by a learned sampler:
 
-    Away from the data s(x) grows, so the interval widens whatever the net does.
+        y = m(x) + s_f(x) xi + s_n z,     xi ~ N(0, 1),   z ~ sampler(x)
+
+    z is trained on standardised leave-one-out residuals (y - m) / s. With
+    z ~ N(0, 1) this is exactly the GP. Away from the data the s_f term widens
+    the interval and nothing the sampler does can cancel it.
+
     With select=True three models for z compete on the validation CRPS:
       gauss   z ~ N(0, 1): the GP itself
       shape   z drawn from one learned distribution, the same for every x
@@ -288,8 +307,6 @@ def make_gp_sgn(max_n=1000, refit="temp2", select=True, **sgn_kw):
     so the net can only override the GP when held-out data supports it.
     """
     import copy
-
-    from scipy.linalg import cho_solve
 
     from .metrics import crps
 
@@ -304,20 +321,18 @@ def make_gp_sgn(max_n=1000, refit="temp2", select=True, **sgn_kw):
             idx = np.random.default_rng(0).choice(len(xtr), max_n, replace=False)
         model = _fit_gp(xtr[idx], ytr[idx])
 
-        def predict(x):
-            m, s = model.predict(np.asarray(x, np.float64), return_std=True)
-            return m, np.maximum(s, 1e-3)
+        def standardise(x, y):
+            m, s_f, s_n = gp_parts(model, x)
+            return m, np.sqrt(s_f**2 + s_n**2)
 
-        m_tr, s_tr = predict(xtr)
-        # Closed-form leave-one-out predictions where the GP has seen the point.
-        Kinv = cho_solve((model.L_, True), np.eye(len(idx)))
-        m_tr[idx] = ytr[idx] - model.alpha_ / np.diag(Kinv)
-        s_tr[idx] = np.maximum(np.sqrt(1 / np.diag(Kinv)), 1e-3)
-        (m_va, s_va), (m_te, s_te) = predict(d.xva), predict(d.xte)
+        m_tr, s_tr = standardise(xtr, ytr)
+        m_tr[idx], s_tr[idx] = gp_loo(model, ytr[idx])
+        m_va, s_va = standardise(d.xva, d.yva)
+        m_te, sf_te, s_n = gp_parts(model, d.xte)
 
         f32 = lambda a: a.astype(np.float32)
         dz = copy.copy(d)
-        dz.ytr, dz.yva, dz.yte = f32((ytr - m_tr) / s_tr), f32((d.yva - m_va) / s_va), f32((d.yte - m_te) / s_te)
+        dz.ytr, dz.yva = f32((ytr - m_tr) / np.maximum(s_tr, 1e-4)), f32((d.yva - m_va) / np.maximum(s_va, 1e-4))
         d0 = copy.copy(dz)  # same targets, inputs blanked: one distribution for all x
         d0.xtr, d0.xva, d0.xte = (np.zeros_like(a[:, :1]) for a in (d.xtr, d.xva, d.xte))
 
@@ -333,18 +348,24 @@ def make_gp_sgn(max_n=1000, refit="temp2", select=True, **sgn_kw):
             score["gauss"] = float(crps(np.asarray(jax.random.normal(k_v, (len(dz.yva), 400))), dz.yva).mean())
         best = min(score, key=score.get)
 
+        yte = np.asarray(d.yte, np.float64)
         if best == "gauss":
             Sz = np.asarray(jax.random.normal(k_g, (len(d.xte), M)))
-            logp_z = np.asarray(norm.logpdf(dz.yte))
+            logp = norm.logpdf(yte, m_te, np.sqrt(sf_te**2 + s_n**2))
         else:
             dd, r = cands[best]
             cfg, params = r["cfg"], r["params"]
             if refit:
                 params = refit_noise(cfg, params, k_r, dd.xva, dd.yva, objective, refit)
             Sz = np.asarray(sgn.sample(cfg, params, k_g, jnp.asarray(dd.xte), M))
-            logp_z = np.asarray(sgn.log_prob(cfg, params, k_g, jnp.asarray(dd.xte), jnp.asarray(dd.yte), 2000))
+            # Each sampled path is a Gaussian for z; add the GP's function variance to it.
+            mu, sd = sgn.forward_k(cfg, params, k_g, jnp.asarray(dd.xte), 1000)
+            comp = norm.logpdf(yte, m_te + s_n * mu, jnp.sqrt((s_n * sd) ** 2 + sf_te**2))
+            logp = logsumexp(comp, 0) - np.log(comp.shape[0])
+        xi = np.asarray(jax.random.normal(jax.random.fold_in(k_g, 1), Sz.shape))
+        S = m_te[:, None] + sf_te[:, None] * xi + s_n * Sz
         info = dict(train_s=time.time() - t, pick=best, **{f"val_{k}": v for k, v in score.items()})
-        return dict(S=m_te[:, None] + s_te[:, None] * Sz, logp=logp_z - np.log(s_te), info=info)
+        return dict(S=S, logp=np.asarray(logp), info=info)
 
     return method
 

@@ -10,7 +10,7 @@ import numpy as np
 
 from gpnn import runner
 
-BLUE, ORANGE, AQUA, YELLOW = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
+BLUE, ORANGE, AQUA, YELLOW, MAGENTA = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 plt.rcParams.update(
     {
@@ -88,7 +88,7 @@ def gap():
     """Exp 7A: predictive bands where there is no training data."""
     z = np.load(runner.RESULTS / "07_gap.npz")
     x = np.linspace(-1.6, 1.6, 161)
-    panels = [("sgn", "sampling net"), ("sgn_ens5", "5 sampling nets, pooled"), ("mdn", "mixture density net"), ("ensemble", "deep ensemble (5 Gaussian nets)"), ("gp", "Gaussian process")]
+    panels = [("sgn", "sampling net"), ("mdn", "mixture density net"), ("ensemble", "deep ensemble (5 Gaussian nets)"), ("gp", "Gaussian process"), ("gp_sgn", "GP + sampling net")]
     fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 3.1), sharey=True)
     tq = z["truth|q"]
     for ax, (tag, title) in zip(axes, panels):
@@ -136,7 +136,7 @@ def well():
 def size():
     """Exp 7B: coverage of the nominal 90% interval as the training set shrinks."""
     sizes = [100, 300, 1000, 3000]
-    series = [("sgn", "sampling net", BLUE), ("sgn_temp2", "sampling net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA), ("gp", "Gaussian process", YELLOW)]
+    series = [("sgn", "sampling net", BLUE), ("sgn_temp2", "sampling net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA), ("gp", "Gaussian process", YELLOW), ("gp_sgn", "GP + sampling net", MAGENTA)]
     fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.6), sharey=True)
     for ax, ds in zip(axes, ("friedman", "hetero")):
         ax.axhline(0.9, color=MUTED, lw=1, ls=(0, (4, 3)))
@@ -151,7 +151,7 @@ def size():
     axes[0].set_ylabel("test coverage of 90% interval")
     axes[1].annotate("nominal 0.9", (100, 0.9), xytext=(0, 5), textcoords="offset points", ha="left", color=MUTED, fontsize=8)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.0))
+    fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0))
     fig.tight_layout(rect=(0, 0, 1, 0.86))
     fig.savefig("figures/size.png", dpi=170)
 
