@@ -32,11 +32,38 @@ def _train_kw(hp):
 # ---------------------------------------------------------------- SGN
 
 
-def make_sgn(objective="es_rb", K=8, K_val=32, **cfg_kw):
-    def method(d, key, **hp):
-        hp = _hp(hp)
+def _with_noise(params, delta):
+    """Shift every log noise scale: one shared temperature or per-node offsets."""
+    layers = [dict(l, log_s=l["log_s"] + dl) for l, dl in zip(params["layers"], delta["layers"])]
+    return dict(params, layers=layers, log_sy=params["log_sy"] + delta["out"])
+
+
+def refit_noise(cfg, params, key, xv, yv, objective, mode="temp", steps=600, K=16):
+    """Re-estimate the noise scales on held-out data, weights frozen.
+
+    Training data cannot see the error a fitted network makes on new inputs;
+    held-out data can. mode="temp" learns one multiplier for all noise scales,
+    mode="scales" one per node.
+    """
+    zero = jnp.zeros(())
+    if mode == "temp":
+        init, expand = dict(t=zero), lambda q: dict(layers=[q["t"]] * cfg.depth, out=q["t"])
+    else:
+        init = dict(layers=[jnp.zeros(cfg.width)] * cfg.depth, out=zero)
+        expand = lambda q: q
+    inner = sgn.make_loss(cfg, objective, K)
+    loss = lambda q, k, x, y: inner(_with_noise(params, expand(q)), k, x, y)
+    q, _ = fit(key, init, loss, xv, yv, steps=steps, batch=256, lr=2e-2, eval_every=steps)
+    return _with_noise(params, expand(q))
+
+
+def make_sgn(objective="es_rb", K=8, K_val=32, refit=None, n_ens=1, **cfg_kw):
+    """refit: None | "temp" | "scales" (see refit_noise). n_ens > 1 pools the
+    samples of independently trained networks."""
+
+    def one(d, key, hp):
         cfg = sgn.SGN(width=hp["width"], depth=hp["depth"], act=hp["act"], **cfg_kw)
-        k0, k1, k2, k3 = jax.random.split(key, 4)
+        k0, k1, k2, k3, k4 = jax.random.split(key, 5)
         params = sgn.init(cfg, k0, d.xtr.shape[1])
         t = time.time()
         params, hist = fit(
@@ -49,12 +76,24 @@ def make_sgn(objective="es_rb", K=8, K_val=32, **cfg_kw):
             val_loss_fn=sgn.make_loss(cfg, objective, max(K, K_val)),
             **_train_kw(hp),
         )
+        if refit:
+            params = refit_noise(cfg, params, k4, d.xva, d.yva, objective, refit)
         info = dict(train_s=time.time() - t, sy=float(jnp.exp(params["log_sy"])), hist=hist)
         if not cfg.cond:
             info["node_s"] = [float(jnp.exp(l["log_s"]).mean()) for l in params["layers"]]
-        S = sgn.sample(cfg, params, k2, jnp.asarray(d.xte), M)
-        logp = sgn.log_prob(cfg, params, k3, jnp.asarray(d.xte), jnp.asarray(d.yte), 2000)
+        S = sgn.sample(cfg, params, k2, jnp.asarray(d.xte), M // n_ens)
+        logp, ess = sgn.log_prob(cfg, params, k3, jnp.asarray(d.xte), jnp.asarray(d.yte), 2000, return_ess=True)
+        info["ess"] = float(jnp.median(ess))
         return dict(S=np.asarray(S), logp=np.asarray(logp), info=info, params=params, cfg=cfg)
+
+    def method(d, key, **hp):
+        hp = _hp(hp)
+        if n_ens == 1:
+            return one(d, key, hp)
+        rs = [one(d, k, hp) for k in jax.random.split(key, n_ens)]
+        logp = np.asarray(logsumexp(jnp.asarray(np.stack([r["logp"] for r in rs])), 0) - np.log(n_ens))
+        info = dict(train_s=sum(r["info"]["train_s"] for r in rs))
+        return dict(S=np.concatenate([r["S"] for r in rs], 1), logp=logp, info=info)
 
     return method
 

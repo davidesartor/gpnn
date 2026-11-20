@@ -156,8 +156,10 @@ def forward_analytic(cfg: SGN, params, x):
 
 
 def forward_k(cfg: SGN, params, key, x, K):
-    """K independent ancestral samples. Returns (mu, sd), each (K, B)."""
-    return jax.vmap(lambda k: forward(cfg, params, k, x))(jax.random.split(key, K))
+    """K independent ancestral samples. Returns (mu, sd), each (K, B, ...)."""
+    mu, sd = forward(cfg, params, key, jnp.tile(x, (K, 1)))  # one big draw is faster than K small ones
+    shape = (K, x.shape[0]) + mu.shape[1:]
+    return mu.reshape(shape), sd.reshape(shape)
 
 
 # ---------------------------------------------------------------- losses
@@ -249,13 +251,23 @@ def sample(cfg: SGN, params, key, x, M=1000, chunk=512):
     return jnp.concatenate([f(k, x[a:b]) for k, (a, b) in zip(keys, spans)])
 
 
-def log_prob(cfg: SGN, params, key, x, y, M=1000, chunk=512):
-    """Monte Carlo estimate of log p(y | x), marginalising the nodes."""
+def log_prob(cfg: SGN, params, key, x, y, M=1000, chunk=512, return_ess=False):
+    """Monte Carlo estimate of log p(y | x), marginalising the nodes.
+
+    With return_ess, also returns the effective sample size fraction of the M
+    paths as importance samples for the posterior over paths given y.
+    """
 
     @jax.jit
     def f(k, xb, yb):
-        return -loss_iw(*forward_k(cfg, params, k, xb, M), yb)
+        logw = norm.logpdf(yb[None], *forward_k(cfg, params, k, xb, M))
+        if logw.ndim == 3:  # vector y: independent output noise per dimension
+            logw = logw.sum(-1)
+        ess = jnp.exp(2 * logsumexp(logw, 0) - logsumexp(2 * logw, 0)) / M
+        return logsumexp(logw, 0) - jnp.log(M), ess
 
     spans = _chunks(x.shape[0], chunk)
     keys = jax.random.split(key, len(spans))
-    return jnp.concatenate([f(k, x[a:b], y[a:b]) for k, (a, b) in zip(keys, spans)])
+    out = [f(k, x[a:b], y[a:b]) for k, (a, b) in zip(keys, spans)]
+    lp, ess = (jnp.concatenate(v) for v in zip(*out))
+    return (lp, ess) if return_ess else lp

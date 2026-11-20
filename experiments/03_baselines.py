@@ -9,8 +9,8 @@ import sys
 from gpnn import methods, runner
 
 SGN = {
-    "sgn": dict(objective="iw+es_rb", K=8),
-    "sgn_het": dict(objective="iw+es_rb", K=8, het=True, collapse=True),
+    "sgn": dict(objective="es_rb", K=8),
+    "sgn_het": dict(objective="es_rb", K=8, het=True, collapse=True),
 }
 TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp"]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]

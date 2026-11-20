@@ -72,7 +72,9 @@ def make_sgn(objective="es", K=8, K_val=32, **cfg_kw):
 
         xs = jnp.asarray(d.xte)
         S = np.concatenate([np.asarray(draw(jax.random.fold_in(k2, i), xs[i : i + 256])) for i in range(0, len(xs), 256)])
-        return dict(S=S, info=dict(train_s=time.time() - t))
+        _, ess = sgn.log_prob(cfg, params, k2, xs, jnp.asarray(d.yte), 2000, chunk=128, return_ess=True)
+        info = dict(train_s=time.time() - t, ess=float(jnp.median(ess)), sy=float(jnp.exp(params["log_sy"]).mean()))
+        return dict(S=S, info=info)
 
     return method
 
@@ -206,8 +208,9 @@ TOYS = {"ring": (_ring_x, _ring), "well": (_well_x, _well)}
 
 
 class Split:
-    def __init__(self, name, n=4000, seed=0, n_test=300, m_truth=1000):
-        sx, sy = TOYS[name]
+    def __init__(self, name, n=4000, seed=0, n_test=300, m_truth=1000, dims=None):
+        sx, sy_ = TOYS[name]
+        sy = sy_ if dims is None else (lambda rng, x, m: sy_(rng, x, m)[..., :dims])
         rng = np.random.default_rng(seed)
         n_val = n // 5
         x = sx(rng, n + n_val)

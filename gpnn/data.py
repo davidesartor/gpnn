@@ -79,7 +79,14 @@ def _friedman(rng, x, m):
     return f[:, None] + scale[:, None] * noise
 
 
+def _gap_x(rng, n):
+    """Training inputs avoid (-0.2, 0.4)."""
+    left = rng.uniform(size=n) < 0.57
+    return np.where(left, rng.uniform(-1, -0.2, n), rng.uniform(0.4, 1, n))[:, None]
+
+
 TOYS = {
+    "hetero_gap": (_gap_x, _hetero),
     "hetero": (_x1(), _hetero),
     "skew": (_x1(), _skew),
     "bimodal": (_x1(), _bimodal),

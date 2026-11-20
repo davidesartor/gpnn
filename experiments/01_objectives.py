@@ -12,13 +12,14 @@ from gpnn import methods, runner
 OBJ = ["iw", "es", "es_rb"]
 KS = [1, 2, 4, 8, 32]
 TAGS = [f"{o}:K={k}" for o in OBJ for k in KS if not (o != "iw" and k == 1)] + ["gauss_homo"]
+TAGS += [f"{o}:K={k}" for o in ("qs", "iw+es_rb", "es_rb+qs") for k in (2, 8)]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]
 
 
 def build(tag):
     if tag in methods.BASELINES:
         return methods.BASELINES[tag]
-    obj, k = tag.split(":K=")
+    obj, k = tag.rsplit(":K=", 1)
     return methods.make_sgn(obj, K=int(k))
 
 
