@@ -27,8 +27,8 @@ REGIONS = {
     "beyond": lambda x: np.abs(x) > 1,
 }
 QS = [0.05, 0.25, 0.5, 0.75, 0.95]
-A_TAGS = ["sgn", "sgn_temp", "sgn_temp2", "sgn_ens5", "mdn", "gauss_hetero", "ensemble", "gp"]
-B_TAGS = ["sgn", "sgn_temp", "sgn_temp2", "sgn_ens5", "mdn", "quantile", "gauss_hetero", "ensemble", "gp"]
+A_TAGS = ["sgn", "sgn_temp", "sgn_temp2", "sgn_ens5", "mdn", "gauss_hetero", "ensemble", "gp", "gp_sgn"]
+B_TAGS = ["sgn", "sgn_temp", "sgn_temp2", "sgn_ens5", "mdn", "quantile", "gauss_hetero", "ensemble", "gp", "gp_sgn"]
 SIZES = [100, 300, 1000, 3000]
 SGN = {
     "sgn": dict(objective="es_rb", K=8, noise="input"),

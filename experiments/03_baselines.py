@@ -17,7 +17,7 @@ SGN = {
     "sgn_pit": dict(objective="es_rb", K=8, noise="input", refit="pit"),  # + post-hoc PIT recalibration
     "dropout_es": dict(objective="es_rb", K=8, noise="dropout"),  # dropout as the noise source, trained as a sampler
 }
-TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp", "mc_dropout"]
+TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp", "mc_dropout", "gp_sgn"]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]
 RUNS = [(n, act, seeds) for n in (2000, 200) for act, seeds in (("relu", 5), ("tanh", 3))]
 

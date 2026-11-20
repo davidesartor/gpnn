@@ -249,23 +249,104 @@ def conformal(d, key, **hp):
     return dict(S=mu[:, None] + res[idx], logp=None, info=r["info"])
 
 
-def gp(d, key, max_n=1000, **hp):
-    """Exact GP, ARD RBF + white noise, type-II maximum likelihood."""
+def _fit_gp(x, y):
     from sklearn.gaussian_process import GaussianProcessRegressor
     from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 
+    kern = ConstantKernel(1.0) * RBF(np.ones(x.shape[1]), (1e-2, 1e3)) + WhiteKernel(0.1, (1e-6, 1e1))
+    return GaussianProcessRegressor(kern, n_restarts_optimizer=0, random_state=0).fit(x, y)
+
+
+def gp(d, key, max_n=1000, **hp):
+    """Exact GP, ARD RBF + white noise, type-II maximum likelihood."""
     x = np.concatenate([d.xtr, d.xva]).astype(np.float64)
     y = np.concatenate([d.ytr, d.yva]).astype(np.float64)
     if len(x) > max_n:
         idx = np.random.default_rng(0).choice(len(x), max_n, replace=False)
         x, y = x[idx], y[idx]
-    kern = ConstantKernel(1.0) * RBF(np.ones(x.shape[1]), (1e-2, 1e3)) + WhiteKernel(0.1, (1e-6, 1e1))
     t = time.time()
-    model = GaussianProcessRegressor(kern, n_restarts_optimizer=0, random_state=0).fit(x, y)
+    model = _fit_gp(x, y)
     mu, sd = model.predict(d.xte.astype(np.float64), return_std=True)
     eps = np.asarray(jax.random.normal(key, (len(mu), M)))
     logp = np.asarray(norm.logpdf(d.yte, mu, sd))
     return dict(S=mu[:, None] + sd[:, None] * eps, logp=logp, info=dict(train_s=time.time() - t))
+
+
+def make_gp_sgn(max_n=1000, refit="temp2", select=True, **sgn_kw):
+    """GP for the function, sampling net for the shape of what the GP leaves over.
+
+    A GP is fitted first. Every target is standardised by the GP's predictive
+    mean m(x) and standard deviation s(x), using leave-one-out predictions for
+    the points the GP was fitted on, and a sampling net learns the distribution
+    of z = (y - m(x)) / s(x). A prediction is y = m(x) + s(x) z.
+
+    Away from the data s(x) grows, so the interval widens whatever the net does.
+    With select=True three models for z compete on the validation CRPS:
+      gauss   z ~ N(0, 1): the GP itself
+      shape   z drawn from one learned distribution, the same for every x
+      cond    z | x from a sampling net
+    so the net can only override the GP when held-out data supports it.
+    """
+    import copy
+
+    from scipy.linalg import cho_solve
+
+    from .metrics import crps
+
+    objective = sgn_kw.get("objective", "es_rb")
+    inner = make_sgn(**sgn_kw)
+
+    def method(d, key, **hp):
+        t = time.time()
+        xtr, ytr = d.xtr.astype(np.float64), d.ytr.astype(np.float64)
+        idx = np.arange(len(xtr))
+        if len(xtr) > max_n:
+            idx = np.random.default_rng(0).choice(len(xtr), max_n, replace=False)
+        model = _fit_gp(xtr[idx], ytr[idx])
+
+        def predict(x):
+            m, s = model.predict(np.asarray(x, np.float64), return_std=True)
+            return m, np.maximum(s, 1e-3)
+
+        m_tr, s_tr = predict(xtr)
+        # Closed-form leave-one-out predictions where the GP has seen the point.
+        Kinv = cho_solve((model.L_, True), np.eye(len(idx)))
+        m_tr[idx] = ytr[idx] - model.alpha_ / np.diag(Kinv)
+        s_tr[idx] = np.maximum(np.sqrt(1 / np.diag(Kinv)), 1e-3)
+        (m_va, s_va), (m_te, s_te) = predict(d.xva), predict(d.xte)
+
+        f32 = lambda a: a.astype(np.float32)
+        dz = copy.copy(d)
+        dz.ytr, dz.yva, dz.yte = f32((ytr - m_tr) / s_tr), f32((d.yva - m_va) / s_va), f32((d.yte - m_te) / s_te)
+        d0 = copy.copy(dz)  # same targets, inputs blanked: one distribution for all x
+        d0.xtr, d0.xva, d0.xte = (np.zeros_like(a[:, :1]) for a in (d.xtr, d.xva, d.xte))
+
+        k_c, k_s, k_g, k_v, k_r = jax.random.split(key, 5)
+        cands = {"cond": (dz, inner(dz, k_c, **hp))}
+        if select:
+            cands["shape"] = (d0, inner(d0, k_s, **hp))
+        score = {}
+        for name, (dd, r) in cands.items():
+            Sv = sgn.sample(r["cfg"], r["params"], k_v, jnp.asarray(dd.xva), 400)
+            score[name] = float(crps(np.asarray(Sv), dd.yva).mean())
+        if select:
+            score["gauss"] = float(crps(np.asarray(jax.random.normal(k_v, (len(dz.yva), 400))), dz.yva).mean())
+        best = min(score, key=score.get)
+
+        if best == "gauss":
+            Sz = np.asarray(jax.random.normal(k_g, (len(d.xte), M)))
+            logp_z = np.asarray(norm.logpdf(dz.yte))
+        else:
+            dd, r = cands[best]
+            cfg, params = r["cfg"], r["params"]
+            if refit:
+                params = refit_noise(cfg, params, k_r, dd.xva, dd.yva, objective, refit)
+            Sz = np.asarray(sgn.sample(cfg, params, k_g, jnp.asarray(dd.xte), M))
+            logp_z = np.asarray(sgn.log_prob(cfg, params, k_g, jnp.asarray(dd.xte), jnp.asarray(dd.yte), 2000))
+        info = dict(train_s=time.time() - t, pick=best, **{f"val_{k}": v for k, v in score.items()})
+        return dict(S=m_te[:, None] + s_te[:, None] * Sz, logp=logp_z - np.log(s_te), info=info)
+
+    return method
 
 
 # MC dropout: stochastic hidden units, trained with one sample per example on the
@@ -273,6 +354,7 @@ def gp(d, key, max_n=1000, **hp):
 mc_dropout = make_sgn("iw", K=1, K_val=1, noise="dropout")
 
 BASELINES = {
+    "gp_sgn": make_gp_sgn(objective="es_rb", K=8, noise="input"),
     "mc_dropout": mc_dropout,
     "gauss_homo": gauss_homo,
     "conformal": conformal,
