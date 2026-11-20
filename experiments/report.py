@@ -17,6 +17,8 @@ p.add_argument("--cols")
 p.add_argument("--fmt", default=".3f")
 p.add_argument("--best", default="min")
 p.add_argument("--sd", action="store_true", help="append the standard deviation over seeds")
+p.add_argument("--rel", help="divide each column by this method's mean")
+p.add_argument("--avg", action="store_true", help="append a column with the mean over datasets")
 a = p.parse_args()
 
 rows = load(a.result)
@@ -24,6 +26,14 @@ methods = a.rows.split(",") if a.rows else list(dict.fromkeys(r["method"] for r 
 sets = a.cols.split(",") if a.cols else list(dict.fromkeys(r["dataset"] for r in rows))
 vals = {(m, d): [r[a.metric] for r in rows if r["method"] == m and r["dataset"] == d and a.metric in r] for m in methods for d in sets}
 mean = {k: (np.mean(v) if v else np.nan) for k, v in vals.items()}
+if a.rel:
+    base = {d: np.mean([r[a.metric] for r in rows if r["method"] == a.rel and r["dataset"] == d]) for d in sets}
+    mean = {(m, d): v / base[d] for (m, d), v in mean.items()}
+if a.avg:
+    for m in methods:
+        mean[m, "mean"] = np.mean([mean[m, d] for d in sets])
+        vals[m, "mean"] = []
+    sets = sets + ["mean"]
 
 
 def score(v):
