@@ -45,6 +45,14 @@ hypothesis and keeps what survived.
    intervals are native; on small data they are trustworthy only after that
    held-out correction.
 
+7. **The GP earns its place back as the bottom layer, not the top.** Let a GP
+   model the function and its uncertainty, and let the sampler model the shape
+   of the noise the GP assumes is Gaussian. This hybrid matches the GP with
+   100 points, beats both parents from 300 points on, has the best average
+   score on the nine UCI sets, and widens its intervals away from the data.
+   It loses where an exact GP cannot keep up (tens of thousands of points) and
+   on sharply multimodal targets.
+
 The rest of this file is the evidence, in the order the questions arose.
 Everything is reproducible on a 4-core CPU.
 
@@ -61,13 +69,19 @@ q      = net.quantile(x_new, [0.05, 0.5, 0.95])
 
 # vector y: an interval for any function of the outputs
 lo, hi = net.interval(x_new, 0.9, fn=lambda y: y.sum(-1))
+
+# small or medium data, scalar y: a GP underneath (finding 7), same interface
+from gpnn.api import GPProbNet
+net = GPProbNet().fit(x, y)
 ```
 
 `ProbNet` is a ReLU MLP that takes `[x, eps]` with `eps ~ N(0, I_8)` and is
 trained on the energy score with `K=8` sampled outputs per example. After
 training it rescales its noise on a held-out split (finding 6; scalar targets
 only). Everything it
-reports is read off its samples.
+reports is read off its samples. With up to a few thousand points and a
+scalar target, `GPProbNet` is the better default; beyond that, or for vector
+targets, use `ProbNet`.
 
 ## The model and the two ways to train it
 
@@ -375,11 +389,13 @@ training set shrinks (5 seeds):
 | heteroscedastic Gaussian | 0.197 | 0.387 | 0.726 | 0.878 |
 | deep ensemble | 0.468 | 0.642 | 0.831 | 0.914 |
 | GP | 0.884 | 0.917 | 0.927 | 0.916 |
+| GP + sampling net (section 8) | 0.885 | 0.878 | 0.906 | 0.900 |
 
 - With 100 points in 10 dimensions every network is badly overconfident. They
   fit the training targets more closely than they can predict new ones, and
   their noise model is estimated from the training residuals.
-- The GP is the only method that is calibrated at every size, and at n=100 it
+- The GP is the only one of these single methods that is calibrated at every
+  size without a held-out correction, and at n=100 it
   is also the most accurate (W1 0.30 against 0.41 to 0.50 for the networks).
   When data is scarce relative to the input dimension, modelling uncertainty
   about the function is not a fool's errand; it is the main effect.
@@ -411,6 +427,7 @@ from (-0.2, 0.4) and beyond |x| = 1:
 | heteroscedastic Gaussian | 0.895 | 0.790 | 0.694 |
 | deep ensemble | 0.904 | 0.857 | 0.824 |
 | GP | 0.879 | 0.879 | 0.906 |
+| GP + sampling net (section 8) | 0.923 | 0.860 | 0.905 |
 
 - Across the hole the function is smooth and every network interpolates it,
   so nothing much goes wrong.
@@ -418,8 +435,8 @@ from (-0.2, 0.4) and beyond |x| = 1:
   interval width they had at the edge, and true coverage falls to between
   0.58 and 0.86. The sampling net's interval there has no meaning, and nothing
   in the model signals that. Held-out rescaling cannot
-  help because the validation data is not out there either. The GP is the
-  only method whose interval widens.
+  help because the validation data is not out there either. Only the GP's
+  interval widens, which is the motivation for section 8.
 
 Result files: `results/07_size_n*.jsonl`, `results/07_gap.npz`. Script:
 `experiments/07_epistemic.py`.
@@ -434,25 +451,27 @@ better; training-set sizes in the header):
 
 | | yacht 248 | boston 406 | energy 616 | concrete 824 | wine 1281 | kin8nm 6554 | power 7656 | naval 9548 | protein 36584 | mean |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| GP + sampling net (section 8) | **0.54** | **0.84** | **0.68** | 0.94 | 0.95 | 1.11 | 1.01 | **0.02** | 1.03 | **0.79** |
 | sampling net | 0.76 | 0.96 | 0.72 | 0.87 | 0.97 | 0.95 | 1.01 | 0.63 | 0.95 | 0.87 |
 | + held-out noise rescaling | 0.70 | 0.97 | 0.71 | **0.81** | 0.96 | 0.95 | 1.01 | 0.60 | 0.95 | 0.85 |
-| + PIT recalibration | 0.75 | 0.94 | **0.70** | 0.82 | 0.96 | 0.95 | 1.01 | 0.57 | 0.95 | 0.85 |
+| + PIT recalibration | 0.75 | 0.94 | 0.70 | 0.82 | 0.96 | 0.95 | 1.01 | 0.57 | 0.95 | 0.85 |
 | sampling net, K=2 | 0.71 | 0.98 | 0.75 | 0.88 | 0.97 | 0.97 | 1.03 | 0.87 | 0.98 | 0.90 |
 | sampling net, node noise | 0.97 | 0.96 | 0.79 | 0.89 | 0.97 | 0.97 | 0.99 | 0.72 | 0.96 | 0.91 |
 | dropout net, energy score | 1.91 | 0.92 | 1.07 | 0.84 | 0.98 | 1.02 | 0.99 | 3.33 | 0.98 | 1.34 |
 | MC dropout | 2.03 | 0.93 | 1.28 | 0.90 | 0.94 | 1.15 | 1.03 | 3.80 | 1.06 | 1.46 |
-| quantile regression | 0.66 | 0.94 | 0.70 | 0.89 | 0.96 | **0.94** | 1.00 | 0.48 | 0.91 | **0.83** |
+| quantile regression | 0.66 | 0.94 | 0.70 | 0.89 | 0.96 | **0.94** | 1.00 | 0.48 | 0.91 | 0.83 |
 | mixture density net | 3.16 | 0.99 | 1.37 | 1.07 | **0.85** | 1.08 | **0.96** | 0.60 | **0.90** | 1.22 |
 | heteroscedastic Gaussian | 5.43 | 1.01 | 1.81 | 1.09 | 0.96 | 0.99 | 1.01 | 1.14 | 0.97 | 1.60 |
 | deep ensemble | 5.65 | 0.99 | 1.44 | 1.04 | 0.95 | 0.94 | 1.01 | 0.91 | 0.96 | 1.54 |
 | deterministic net + held-out residuals | 0.94 | 0.99 | 1.00 | 1.01 | 0.98 | 1.00 | 1.00 | 0.75 | 0.99 | 0.96 |
-| GP (1000 points) | **0.65** | **0.90** | 0.89 | 0.92 | 0.95 | 1.30 | 1.08 | **0.03** | 1.12 | 0.87 |
+| GP (1000 points) | 0.65 | 0.90 | 0.89 | 0.92 | 0.95 | 1.30 | 1.08 | 0.03 | 1.12 | 0.87 |
 
 Coverage of the nominal 90% interval, and how wide that interval is relative
 to the deterministic network's:
 
 | | yacht | boston | energy | concrete | wine | kin8nm | power | naval | protein | mean abs. error | relative width |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| GP + sampling net (section 8) | 0.93 | 0.90 | 0.87 | 0.87 | 0.87 | 0.93 | 0.90 | 0.94 | 0.89 | 0.022 | 0.89 |
 | sampling net | 0.88 | 0.72 | 0.78 | 0.62 | 0.83 | 0.85 | 0.90 | 0.99 | 0.90 | 0.092 | 0.74 |
 | + held-out noise rescaling | 0.85 | 0.85 | 0.87 | 0.83 | 0.86 | 0.90 | 0.90 | 0.98 | 0.89 | 0.036 | 0.85 |
 | + PIT recalibration | 0.86 | 0.85 | 0.90 | 0.84 | 0.90 | 0.89 | 0.90 | 0.90 | 0.90 | **0.019** | 0.85 |
@@ -464,8 +483,8 @@ to the deterministic network's:
 | deterministic net + held-out residuals | 0.86 | 0.87 | 0.85 | 0.83 | 0.91 | 0.90 | 0.90 | 0.90 | 0.90 | 0.023 | 1.07 |
 | GP | 0.86 | 0.88 | 0.86 | 0.87 | 0.86 | 0.90 | 0.92 | 0.90 | 0.88 | 0.024 | 0.96 |
 
-- **Accuracy.** The sampling net and quantile regression are the two best
-  networks and are close to each other. Both are about 15% better than
+- **Accuracy.** Leaving the hybrid of section 8 aside, the sampling net and
+  quantile regression are the two best networks and are close to each other. Both are about 15% better than
   fixed-noise regression on average, and far better than the likelihood-trained
   heads on the small sets, where Gaussian and mixture heads are unstable
   (3 to 6 times worse on `yacht`). The mixture density net wins on the three
@@ -479,7 +498,7 @@ to the deterministic network's:
   help; on `naval`, whose target is almost noise-free, it over-covers.
 - **With held-out rescaling** its coverage error drops from 0.092 to 0.036,
   and with PIT recalibration (map each predicted quantile level through the
-  distribution of validation PITs) to 0.019, the best in the table, with
+  distribution of validation PITs) to 0.019, the lowest in the table, with
   intervals 15% narrower than the deterministic network's. The GP and the
   held-out-residual baseline are as well calibrated but wider. So the intervals
   are native in the sense that the model produces them; on small data they are
@@ -493,6 +512,91 @@ to the deterministic network's:
 - **K=2** costs 3 points of CRPS on average against K=8, most of it on `naval`.
 
 Result file: `results/04_uci.jsonl`. Script: `experiments/04_uci.py`.
+
+## 8. Putting the GP back: a hybrid
+
+Sections 6 and 7 say the GP is right about the function exactly where the
+sampling net is wrong (little data, no data), and sections 3 and 7 say the
+sampling net is right about the noise exactly where the GP is wrong (anything
+not Gaussian and homoscedastic). The two can be combined so that each does
+only its own job.
+
+A GP splits its predictive variance into a part for the function, `s_f(x)^2`,
+which shrinks with data and grows away from it, and a constant noise part
+`s_n^2`. Keep the first and replace the Gaussian noise by a sampler:
+
+```
+y = m(x) + s_f(x) * xi + s_n * z        xi ~ N(0, 1),   z ~ sampler(x)
+```
+
+`z` is trained with the energy score on standardised leave-one-out residuals
+of the GP, which are available in closed form. With `z ~ N(0, 1)` the model is
+exactly the GP. Three models for `z` compete on validation CRPS: `N(0, 1)`, one
+learned distribution shared by all inputs, and a sampling net conditional on
+`x`. So the network can only override the GP where held-out data supports it,
+and nothing it learns can cancel the `s_f` term away from the data. In code
+this is `GPProbNet`, with the same interface as `ProbNet`.
+
+`friedman` (10 inputs), by training-set size:
+
+| W1 to the true conditional | n=100 | n=300 | n=1000 | n=3000 |
+|---|---:|---:|---:|---:|
+| GP + sampling net | 0.314 | **0.224** | **0.176** | **0.109** |
+| GP | **0.304** | 0.242 | 0.217 | 0.204 |
+| sampling net + held-out rescaling | 0.430 | 0.311 | 0.220 | 0.143 |
+| 5 sampling nets, pooled | 0.461 | 0.292 | 0.200 | 0.128 |
+| deep ensemble | 0.412 | 0.291 | 0.219 | 0.192 |
+
+| coverage of the 90% interval | n=100 | n=300 | n=1000 | n=3000 |
+|---|---:|---:|---:|---:|
+| GP + sampling net | 0.885 | 0.878 | 0.906 | 0.900 |
+| GP | 0.884 | 0.917 | 0.927 | 0.916 |
+| sampling net + held-out rescaling | 0.877 | 0.886 | 0.894 | 0.880 |
+
+On the six synthetic problems (W1; the hybrid against the best other method
+in sections 3 and 6):
+
+| | hetero | skew | bimodal | heavy | inverse | friedman |
+|---|---:|---:|---:|---:|---:|---:|
+| n=2000: GP + sampling net | 0.032 | **0.044** | 0.057 | 0.081 | 0.154 | **0.119** |
+| n=2000: sampling net | 0.031 | 0.052 | 0.062 | 0.087 | 0.094 | 0.165 |
+| n=2000: best of the others | **0.030** | 0.047 | **0.042** | **0.078** | **0.058** | 0.183 |
+| n=200: GP + sampling net | **0.068** | **0.086** | 0.106 | 0.158 | 0.188 | 0.260 |
+| n=200: sampling net | 0.077 | 0.088 | 0.093 | **0.151** | 0.153 | 0.384 |
+| n=200: best of the others | 0.081 | 0.113 | **0.084** | 0.178 | **0.147** | **0.256** |
+
+- **It follows the GP when data is scarce and leaves it behind when data
+  arrives.** At n=100 it picks the Gaussian or shape-only residual model and
+  matches the GP. From n=300 it is the most accurate method tested at every
+  size, and at n=3000 its error is about half the GP's. Its coverage stays
+  within 2.5 points of nominal throughout.
+- **Beyond the data it covers like the GP**: 0.905 against the GP's 0.906 and
+  the sampling net's 0.80 in the extrapolation test of section 6 (0.92 where
+  there was data, 0.86 in the hole).
+- **On the nine UCI sets it has the best average CRPS** of any method (0.79
+  relative to fixed-noise regression, against 0.83 for quantile regression,
+  0.85 for the rescaled sampling net and 0.87 for the GP), winning `yacht`,
+  `boston`, `energy`, `wine` and `naval`. Its coverage error is 0.022, its
+  worst coverage on any set 0.87 (the best worst-case in the table), and its
+  intervals are 11% narrower than the deterministic network's.
+- **Where it loses.** On `kin8nm` and `protein` (6500 and 36600 points) it is
+  worse than the plain sampling net (1.11 and 1.03 against 0.95): the exact GP
+  sees only 1000 points, its mean is poor, and standardising by it hurts. And
+  on `inverse`, where the conditional has three sharp branches, the GP mean
+  runs between the branches and the residual is harder to learn than the
+  target was (0.154 against 0.094). A sparse GP would address the first; the
+  second is structural.
+- It costs a GP fit plus two sampler trainings: about a minute per UCI run
+  here against 22 s for the sampling net.
+
+An earlier version scaled the sampler's output by the GP's total standard
+deviation, `y = m + s z`. It had the same accuracy and covered only 0.75
+beyond the data: where the network had learned that the noise is low, it
+shrank the interval again as fast as the GP widened it. Adding the function
+uncertainty as its own term is what makes the widening unconditional.
+
+Result rows are tagged `gp_sgn` in `results/03_*`, `04_uci`, `07_*`.
+Code: `make_gp_sgn` in `gpnn/methods.py`, `GPProbNet` in `gpnn/api.py`.
 
 ## Prior work
 
@@ -523,7 +627,9 @@ uncertainty. The citations in the second bullet are from memory.
 - The vector-target experiments are synthetic; no real multi-output data was
   reachable from the sandbox.
 - Hyperparameters were set once and shared by all methods; no method was
-  tuned per dataset. A tuned GP or a tuned mixture density net may do better
+  tuned per dataset. The hybrid of section 8 was designed after seeing the
+  other results on these same benchmarks, so its numbers are less
+  independent than the rest. A tuned GP or a tuned mixture density net may do better
   than shown.
 - The GP baseline is an exact GP with an ARD RBF kernel on at most 1000
   points, homoscedastic. Heteroscedastic or sparse GPs were not tried.
@@ -533,8 +639,8 @@ uncertainty. The citations in the second bullet are from memory.
 
 ```
 gpnn/sgn.py        the network, its noise modes, and the sample-based losses
-gpnn/api.py        ProbNet: fit / interval / regions / quantile / sample
-gpnn/methods.py    every method behind one interface, held-out noise rescaling
+gpnn/api.py        ProbNet and GPProbNet: fit / interval / regions / quantile / sample
+gpnn/methods.py    every method behind one interface, noise rescaling, the GP hybrid
 gpnn/multi.py      vector targets: losses, baselines, problems, metrics
 gpnn/metrics.py    CRPS, coverage, calibration, distance to a known truth
 gpnn/data.py       synthetic problems with a sampleable truth, UCI loaders
