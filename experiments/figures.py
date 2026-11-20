@@ -156,7 +156,35 @@ def size():
     fig.savefig("figures/size.png", dpi=170)
 
 
-FIGS = dict(samples_needed=samples_needed, gap=gap, well=well, size=size)
+def toys():
+    """Exp 3: samples from each method's predictive distribution on the 1-d problems."""
+    z = np.load(runner.RESULTS / "fig_toys.npz")
+    names = ["hetero", "skew", "heavy", "bimodal", "inverse"]
+    rows = [("truth", "true p(y|x)"), ("sgn", "sampling net"), ("mdn", "mixture density net"), ("quantile", "quantile regression"), ("gauss_hetero", "heteroscedastic\nGaussian")]
+    fig, axes = plt.subplots(len(rows), len(names), figsize=(2.5 * len(names), 1.75 * len(rows)), sharex="col", sharey="col")
+    for j, toy in enumerate(names):
+        T = z[f"{toy}|truth"]
+        n_grid, n_draw = T.shape
+        lo_x, hi_x = (-0.15, 1.15) if toy == "inverse" else (-1, 1)
+        x = np.repeat(np.linspace(lo_x, hi_x, n_grid), n_draw)
+        lo, hi = np.quantile(T, 0.001), np.quantile(T, 0.999)
+        for i, (tag, label) in enumerate(rows):
+            ax = axes[i, j]
+            ax.scatter(x, z[f"{toy}|{tag}"].ravel(), s=0.7, c=INK if tag == "truth" else BLUE, alpha=0.22, linewidths=0, rasterized=True)
+            ax.set_ylim(lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo))
+            ax.grid(False)
+            ax.tick_params(labelsize=7)
+            if i == 0:
+                ax.set_title(toy, loc="left")
+            if j == 0:
+                ax.set_ylabel(label, fontsize=8)
+    for ax in axes[-1]:
+        ax.set_xlabel("x")
+    fig.tight_layout()
+    fig.savefig("figures/toys.png", dpi=170)
+
+
+FIGS = dict(samples_needed=samples_needed, gap=gap, well=well, size=size, toys=toys)
 
 if __name__ == "__main__":
     for name in sys.argv[1:] or FIGS:

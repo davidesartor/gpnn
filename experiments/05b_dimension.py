@@ -36,8 +36,10 @@ def one(job):
 
 if __name__ == "__main__":
     if "run" in sys.argv:
-        jobs = [(t, D, s, i % 4) for i, (t, D, s) in enumerate((t, D, s) for D in DIMS for t in TAGS for s in range(3))]
-        with ProcessPoolExecutor(4, mp_context=mp.get_context("fork")) as ex, OUT.open("w") as f:
+        done = {(r["method"], r["dataset"], r["seed"]) for r in runner.load("05b_dimension")} if OUT.exists() else set()
+        todo = [(t, D, s) for D in DIMS for t in TAGS for s in range(3) if (t, f"D={D}", s) not in done]
+        jobs = [(*j, i % 4) for i, j in enumerate(todo)]
+        with ProcessPoolExecutor(4, mp_context=mp.get_context("fork")) as ex, OUT.open("a") as f:
             for row in ex.map(one, jobs):
                 f.write(json.dumps(row) + "\n")
                 f.flush()

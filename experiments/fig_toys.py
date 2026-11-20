@@ -1,4 +1,4 @@
-"""Figure: what each method's predictive distribution looks like on the 1-d toys."""
+"""Samples from each method on a grid of inputs, for the `toys` figure (see figures.py)."""
 
 import multiprocessing as mp
 import os
@@ -11,7 +11,6 @@ from gpnn import runner
 
 TOYS = ["hetero", "skew", "heavy", "bimodal", "inverse"]
 METHODS = ["sgn", "mdn", "quantile", "gauss_hetero"]
-LABEL = dict(sgn="stochastic graph net", mdn="mixture density net", quantile="quantile regression", gauss_hetero="heteroscedastic Gaussian")
 RANGE = dict(inverse=(-0.15, 1.15))
 G, MS = 160, 60  # grid points, samples drawn per grid point
 OUT = runner.RESULTS / "fig_toys.npz"
@@ -46,27 +45,3 @@ if __name__ == "__main__":
                 out[f"{toy}|{method}"], out[f"{toy}|truth"] = S, T
                 print(toy, method, flush=True)
         np.savez_compressed(OUT, **out)
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    z = np.load(OUT)
-    rows = ["truth"] + METHODS
-    fig, axes = plt.subplots(len(rows), len(TOYS), figsize=(2.6 * len(TOYS), 1.9 * len(rows)), sharex="col", sharey="col")
-    for j, toy in enumerate(TOYS):
-        x = np.repeat(grid(toy)[:, 0], MS)
-        T = z[f"{toy}|truth"]
-        lo, hi = np.quantile(T, 0.001), np.quantile(T, 0.999)
-        for i, row in enumerate(rows):
-            ax = axes[i, j]
-            ax.scatter(x, z[f"{toy}|{row}"].ravel(), s=0.6, c="0.35" if row == "truth" else "C0", alpha=0.25, linewidths=0, rasterized=True)
-            ax.set_ylim(lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo))
-            ax.tick_params(labelsize=7)
-            if i == 0:
-                ax.set_title(toy, fontsize=10)
-            if j == 0:
-                ax.set_ylabel("true p(y|x)" if row == "truth" else LABEL[row], fontsize=8)
-    fig.tight_layout()
-    fig.savefig("figures/toys.png", dpi=170)

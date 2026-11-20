@@ -241,12 +241,15 @@ FUNCTIONALS = {
 }
 
 
-def energy_score(S, y, m=200):
+def energy_score(S, y, m=200, chunk=16):
     """Sample estimate of the multivariate energy score. S: (N, M, D); y: (N, D)."""
-    S = np.asarray(S, np.float64)[:, :m]
-    fit_ = np.linalg.norm(S - y[:, None], axis=-1).mean(1)
-    pair = np.linalg.norm(S[:, :, None] - S[:, None, :], axis=-1)
-    return float((fit_ - 0.5 * pair.sum((1, 2)) / (m * (m - 1))).mean())
+    out = []
+    for i in range(0, len(S), chunk):  # the pairwise term is O(chunk * m^2 * D) memory
+        s = np.asarray(S[i : i + chunk, :m], np.float64)
+        fit_ = np.linalg.norm(s - y[i : i + chunk, None], axis=-1).mean(1)
+        pair = np.linalg.norm(s[:, :, None] - s[:, None, :], axis=-1)
+        out.append(fit_ - 0.5 * pair.sum((1, 2)) / (m * (m - 1)))
+    return float(np.concatenate(out).mean())
 
 
 def evaluate(S, d):
