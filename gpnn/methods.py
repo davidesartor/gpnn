@@ -33,23 +33,29 @@ def _train_kw(hp):
 
 
 def _with_noise(params, delta):
-    """Shift every log noise scale: one shared temperature or per-node offsets."""
+    """Shift the log noise scales: of the nodes, of the input noise, of the output."""
     layers = [dict(l, log_s=l["log_s"] + dl) for l, dl in zip(params["layers"], delta["layers"])]
-    return dict(params, layers=layers, log_sy=params["log_sy"] + delta["out"])
+    return dict(params, layers=layers, log_eps=params.get("log_eps", 0.0) + delta["eps"], log_sy=params["log_sy"] + delta["out"])
 
 
 def refit_noise(cfg, params, key, xv, yv, objective, mode="temp", steps=600, K=16):
     """Re-estimate the noise scales on held-out data, weights frozen.
 
     Training data cannot see the error a fitted network makes on new inputs;
-    held-out data can. mode="temp" learns one multiplier for all noise scales,
-    mode="scales" one per node.
+    held-out data can.
+      mode="temp"    one multiplier for the output noise and the node noise
+      mode="temp2"   one multiplier for the noise inside the network (input and
+                     nodes) and a separate one for the output noise
+      mode="scales"  one multiplier per node
     """
     zero = jnp.zeros(())
     if mode == "temp":
-        init, expand = dict(t=zero), lambda q: dict(layers=[q["t"]] * cfg.depth, out=q["t"])
+        init, expand = dict(t=zero), lambda q: dict(layers=[q["t"]] * cfg.depth, eps=0.0, out=q["t"])
+    elif mode == "temp2":
+        init = dict(inner=zero, out=zero)
+        expand = lambda q: dict(layers=[q["inner"]] * cfg.depth, eps=q["inner"], out=q["out"])
     else:
-        init = dict(layers=[jnp.zeros(cfg.width)] * cfg.depth, out=zero)
+        init = dict(layers=[jnp.zeros(cfg.width)] * cfg.depth, eps=zero, out=zero)
         expand = lambda q: q
     inner = sgn.make_loss(cfg, objective, K)
     loss = lambda q, k, x, y: inner(_with_noise(params, expand(q)), k, x, y)
@@ -89,7 +95,7 @@ def make_sgn(objective="es_rb", K=8, K_val=32, refit=None, n_ens=1, **cfg_kw):
             val_loss_fn=sgn.make_loss(cfg, objective, max(K, K_val)),
             **_train_kw(hp),
         )
-        if refit in ("temp", "scales"):
+        if refit in ("temp", "temp2", "scales"):
             params = refit_noise(cfg, params, k4, d.xva, d.yva, objective, refit)
         info = dict(train_s=time.time() - t, sy=float(jnp.exp(params["log_sy"])), hist=hist)
         if not cfg.cond:
@@ -262,7 +268,12 @@ def gp(d, key, max_n=1000, **hp):
     return dict(S=mu[:, None] + sd[:, None] * eps, logp=logp, info=dict(train_s=time.time() - t))
 
 
+# MC dropout: stochastic hidden units, trained with one sample per example on the
+# Gaussian likelihood; the predictive distribution is read off test-time samples.
+mc_dropout = make_sgn("iw", K=1, K_val=1, noise="dropout")
+
 BASELINES = {
+    "mc_dropout": mc_dropout,
     "gauss_homo": gauss_homo,
     "conformal": conformal,
     "gauss_hetero": gauss_hetero,

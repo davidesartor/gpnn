@@ -33,7 +33,8 @@ class SGN(NamedTuple):
     width: int = 64
     depth: int = 2
     act: str = "tanh"
-    noise: str = "all"  # all | none | first | last | input | both (= input + all)
+    noise: str = "all"  # all | none | first | last | input | both (= input + all) | dropout
+    p_drop: float = 0.1  # for noise == "dropout": Bernoulli masks on hidden activations
     cond: bool = False  # node noise scale depends on the parent layer
     input_noise: int = 8  # dims of noise appended to x when noise == "input"
     noise0: float = 0.5
@@ -48,6 +49,7 @@ class SGN(NamedTuple):
         return {
             "all": True,
             "both": True,
+            "dropout": False,
             "none": False,
             "input": False,
             "first": l == 0,
@@ -114,13 +116,16 @@ def forward(cfg: SGN, params, key, x):
     keys = jax.random.split(key, cfg.depth + 1)
     h = x
     if cfg.noise in ("input", "both"):
-        h = jnp.concatenate([h, jax.random.normal(keys[-1], (x.shape[0], cfg.input_noise))], -1)
+        eps = jax.random.normal(keys[-1], (x.shape[0], cfg.input_noise))
+        h = jnp.concatenate([h, jnp.exp(params.get("log_eps", 0.0)) * eps], -1)  # log_eps: see refit_noise
     n_sampled = cfg.depth - 1 if cfg.collapse else cfg.depth
     for l, layer in enumerate(params["layers"][:n_sampled]):
         z = h @ layer["W"] + layer["b"]
         if cfg.noisy(l):
             z = z + noise_scale(cfg, layer, h) * jax.random.normal(keys[l], z.shape)
         h = act(z)
+        if cfg.noise == "dropout":
+            h = h * jax.random.bernoulli(keys[l], 1 - cfg.p_drop, h.shape) / (1 - cfg.p_drop)
     log_sy = _log_sy(cfg, params) + (h @ params["out"]["w_s"] if cfg.het else 0.0)
     if cfg.collapse:
         mu, var = _collapsed_layer(cfg, params, params["layers"][-1], h)

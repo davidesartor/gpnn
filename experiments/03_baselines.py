@@ -10,12 +10,14 @@ from gpnn import methods, runner
 
 SGN = {
     "sgn": dict(objective="es_rb", K=8, noise="input"),  # noise appended to the input
-    "sgn_temp": dict(objective="es_rb", K=8, noise="input", refit="temp"),  # + held-out noise rescaling
+    "sgn_temp": dict(objective="es_rb", K=8, noise="input", refit="temp"),  # + held-out rescaling of the output noise
+    "sgn_temp2": dict(objective="es_rb", K=8, noise="input", refit="temp2"),  # separate inner / output rescaling
     "sgn_node": dict(objective="es_rb", K=8, noise="all"),  # noise at every hidden node
     "sgn_k2": dict(objective="es_rb", K=2, noise="input"),  # the minimum: two paths per example
     "sgn_pit": dict(objective="es_rb", K=8, noise="input", refit="pit"),  # + post-hoc PIT recalibration
+    "dropout_es": dict(objective="es_rb", K=8, noise="dropout"),  # dropout as the noise source, trained as a sampler
 }
-TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp"]
+TAGS = list(SGN) + ["gauss_homo", "conformal", "gauss_hetero", "mdn", "quantile", "ensemble", "gp", "mc_dropout"]
 TOYS = ["hetero", "skew", "bimodal", "heavy", "inverse", "friedman"]
 RUNS = [(n, act, seeds) for n in (2000, 200) for act, seeds in (("relu", 5), ("tanh", 3))]
 

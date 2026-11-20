@@ -34,8 +34,9 @@ class ProbNet:
         seed=0,
     ):
         """K: sampled paths per training example (>= 2).
-        calibrate: after training, rescale the noise on the validation split so
-        the predictive spread reflects error on unseen data, not on the fit."""
+        calibrate: after training, freeze the weights and fit two multipliers on
+        the validation split, one for the noise fed into the network and one for
+        the output noise, so the spread reflects error on unseen data."""
         self.hp = dict(width=width, depth=depth, act=act, noise=noise)
         self.K, self.steps, self.batch, self.lr = K, steps, batch, lr
         self.val_frac, self.calibrate, self.seed = val_frac, calibrate, seed
@@ -62,7 +63,7 @@ class ProbNet:
         loss, val_loss = self._loss(self.K), self._loss(max(self.K, 32))
         params, self.history = fit(k1, params, loss, xt, yt, val=(xv, yv), val_loss_fn=val_loss, steps=self.steps, batch=self.batch, lr=self.lr)
         if self.calibrate and not self.vector:
-            params = refit_noise(self.cfg, params, k2, xv, yv, "es_rb", "temp")
+            params = refit_noise(self.cfg, params, k2, xv, yv, "es_rb", "temp2")
         self.params = params
         return self
 

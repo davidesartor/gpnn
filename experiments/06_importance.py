@@ -20,7 +20,7 @@ from gpnn import runner
 
 OUT = runner.RESULTS / "06_importance.jsonl"
 GRID = [(d, w) for d in (1, 2, 4, 8) for w in (16, 64, 256)]
-DIMS = [1, 2, 4, 8, 12]
+DIMS = [2, 3, 4, 6, 8, 12]
 
 
 def one(job):
@@ -45,10 +45,11 @@ def one(job):
 
 if __name__ == "__main__":
     if "run" in sys.argv:
+        have = {r["part"] for r in runner.load("06_importance")} if OUT.exists() else set()
         jobs = [("A", t, d, w, s) for t in ("skew", "inverse") for d, w in GRID for s in range(2)]
         jobs += [("B", "well", D, 0, s) for D in DIMS for s in range(2)]
-        jobs = [(*j, i % 4) for i, j in enumerate(jobs)]
-        with ProcessPoolExecutor(4, mp_context=mp.get_context("fork")) as ex, OUT.open("w") as f:
+        jobs = [(*j, i % 4) for i, j in enumerate(j for j in jobs if j[0] not in have)]
+        with ProcessPoolExecutor(4, mp_context=mp.get_context("fork")) as ex, OUT.open("a") as f:
             for row in ex.map(one, jobs):
                 f.write(json.dumps(row) + "\n")
                 f.flush()
