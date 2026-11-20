@@ -6,4 +6,5 @@ dependencies = [
     "jax>=0.12.1",
     "matplotlib>=3.11.2",
     "optax>=0.2.9",
+    "scikit-learn>=1.9.1",
 ]

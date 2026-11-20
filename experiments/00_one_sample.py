@@ -154,7 +154,7 @@ def main():
     axes[0].set_ylabel("y")
     axes[0].legend(loc="upper left", markerscale=4, frameon=False)
     fig.tight_layout()
-    fig.savefig("one_sample.png", dpi=150)
+    fig.savefig("figures/00_one_sample.png", dpi=150)
 
 
 if __name__ == "__main__":
