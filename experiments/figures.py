@@ -88,7 +88,7 @@ def gap():
     """Exp 7A: predictive bands where there is no training data."""
     z = np.load(runner.RESULTS / "07_gap.npz")
     x = np.linspace(-1.6, 1.6, 161)
-    panels = [("sgn", "stochastic net"), ("sgn_ens5", "5 stochastic nets, pooled"), ("mdn", "mixture density net"), ("ensemble", "deep ensemble (5 Gaussian nets)"), ("gp", "Gaussian process")]
+    panels = [("sgn", "sampling net"), ("sgn_ens5", "5 sampling nets, pooled"), ("mdn", "mixture density net"), ("ensemble", "deep ensemble (5 Gaussian nets)"), ("gp", "Gaussian process")]
     fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 3.1), sharey=True)
     tq = z["truth|q"]
     for ax, (tag, title) in zip(axes, panels):
@@ -117,7 +117,7 @@ def well():
 
     d = multi.Split("well", seed=0)
     i = int(np.argmin(np.abs(d.xte[:6, 0])))  # of the saved test points, the one starting closest to 0
-    panels = [("truth", "true process"), ("sgn", "stochastic net"), ("mdn", "mixture density net"), ("mv_gauss", "full-covariance Gaussian"), ("quantile_indep", "per-step quantiles,\nindependent ranks")]
+    panels = [("truth", "true process"), ("sgn", "sampling net"), ("mdn", "mixture density net"), ("mv_gauss", "full-covariance Gaussian"), ("quantile_indep", "per-step quantiles,\nindependent ranks")]
     fig, axes = plt.subplots(1, len(panels), figsize=(3.0 * len(panels), 3.0), sharey=True)
     t = np.arange(1, 13)
     for ax, (tag, title) in zip(axes, panels):
@@ -136,7 +136,7 @@ def well():
 def size():
     """Exp 7B: coverage of the nominal 90% interval as the training set shrinks."""
     sizes = [100, 300, 1000, 3000]
-    series = [("sgn", "stochastic net", BLUE), ("sgn_temp", "stochastic net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA), ("gp", "Gaussian process", YELLOW)]
+    series = [("sgn", "sampling net", BLUE), ("sgn_temp2", "sampling net + held-out noise rescaling", ORANGE), ("ensemble", "deep ensemble", AQUA), ("gp", "Gaussian process", YELLOW)]
     fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.6), sharey=True)
     for ax, ds in zip(axes, ("friedman", "hetero")):
         ax.axhline(0.9, color=MUTED, lw=1, ls=(0, (4, 3)))
